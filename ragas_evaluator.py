@@ -165,3 +165,157 @@ def evaluate_response_quality(
 
     except Exception as e:
         return {"error": f"RAGAS failed: {str(e)[:150]}"}
+    
+def load_test_questions(filepath: str) -> List[Dict]:
+    """Load test questions from JSON or txt file"""
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"Test file not found: {filepath}")
+
+    if filepath.endswith('.json'):
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+        questions = []
+        for item in data:
+            if isinstance(item, str):
+                questions.append({"question": item, "category": "general"})
+            elif isinstance(item, dict) and "question" in item:
+                questions.append(item)
+        return questions
+
+    # .txt format
+    questions = []
+    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('Q') and ':' in line:
+                parts = line.split(':', 1)
+                if len(parts) == 2 and parts[1].strip():
+                    questions.append({
+                        "question": parts[1].strip(),
+                        "category": "general"
+                    })
+    return questions
+
+
+def run_batch_evaluation(
+    test_filepath: str,
+    collection,
+    n_retrieve: int = 3,
+    output_filepath: str = "batch_eval_results.json"
+) -> Dict[str, Any]:
+    """
+    Run RAGAS evaluation on ALL questions in test file.
+    Outputs per-question scores + aggregate mean per metric.
+    
+    This proves your RAG system works systematically —
+    not just on one question but across multiple categories.
+    """
+    import rag_client
+    import llm_client
+
+    questions = load_test_questions(test_filepath)
+    if not questions:
+        return {"error": f"No questions found in {test_filepath}"}
+
+    print(f"\n{'='*50}")
+    print(f"BATCH EVALUATION — {len(questions)} questions")
+    print(f"{'='*50}\n")
+
+    per_question_results = []
+    all_scores: Dict[str, List[float]] = {}
+
+    for i, q_item in enumerate(questions):
+        question = q_item.get("question", "").strip()
+        category = q_item.get("category", "general")
+        if not question:
+            continue
+
+        print(f"[{i+1}/{len(questions)}] {category}: {question[:60]}...")
+
+        result_entry = {
+            "question_number": i + 1,
+            "question":        question,
+            "category":        category,
+            "answer":          "",
+            "scores":          {},
+            "error":           None
+        }
+
+        try:
+            # Retrieve chunks
+            docs_result = rag_client.retrieve_documents(
+                collection, question, n_retrieve
+            )
+            if not docs_result or not docs_result.get("documents"):
+                result_entry["error"] = "No documents retrieved"
+                per_question_results.append(result_entry)
+                continue
+
+            # Format context
+            raw_docs  = docs_result["documents"][0]
+            raw_metas = docs_result["metadatas"][0]
+            raw_dists = docs_result.get("distances", [[]])[0]
+            context   = rag_client.format_context(raw_docs, raw_metas, raw_dists)
+
+            # Generate answer
+            answer = llm_client.generate_response(
+                openai_key="",
+                user_message=question,
+                context=context,
+                conversation_history=[]
+            )
+            result_entry["answer"] = answer
+
+            # Score with RAGAS
+            scores = evaluate_response_quality(question, answer, raw_docs)
+            result_entry["scores"] = scores
+
+            if "error" not in scores:
+                for metric, value in scores.items():
+                    if isinstance(value, (int, float)):
+                        all_scores.setdefault(metric, []).append(value)
+
+            score_str = ", ".join(
+                f"{k}={v:.3f}" for k, v in scores.items()
+                if isinstance(v, float)
+            )
+            print(f"  Scores: {score_str}")
+
+        except Exception as e:
+            result_entry["error"] = str(e)
+            print(f"  Error: {e}")
+
+        per_question_results.append(result_entry)
+
+    # Aggregate mean per metric
+    aggregate_scores = {}
+    for metric, values in all_scores.items():
+        if values:
+            aggregate_scores[metric] = {
+                "mean":  round(statistics.mean(values), 3),
+                "min":   round(min(values), 3),
+                "max":   round(max(values), 3),
+                "count": len(values)
+            }
+
+    report = {
+        "test_file":              test_filepath,
+        "total_questions":        len(questions),
+        "evaluated_successfully": sum(
+            1 for r in per_question_results if not r.get("error")
+        ),
+        "aggregate_scores":       aggregate_scores,
+        "per_question_results":   per_question_results
+    }
+
+    with open(output_filepath, 'w') as f:
+        json.dump(report, f, indent=2)
+
+    print(f"\n{'='*50}")
+    print("AGGREGATE SCORES (mean across all questions):")
+    for metric, stats in aggregate_scores.items():
+        print(f"  {metric:25s}: mean={stats['mean']:.3f} "
+              f"min={stats['min']:.3f} max={stats['max']:.3f}")
+    print(f"\nResults saved to: {output_filepath}")
+
+    return report

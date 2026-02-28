@@ -24,37 +24,3 @@
     "category": "technical"
   }
 ]
-
-
-
-"""
-Save it. Now let's build `chat.py` — the Streamlit UI that ties everything together!
-
-
-## 🧠 CONCEPT — What Does `chat.py` Do?
-```
-chat.py = the face of your entire system
-
-It connects ALL 4 files together:
-
-User types question in browser
-         │
-         ▼
-    chat.py (Streamlit UI)
-         │
-    ┌────┴─────────────────────────┐
-    │                              │
-    ▼                              ▼
-rag_client.py              llm_client.py
-(search ChromaDB)          (ask Claude)
-         │                              │
-         └────────────┬─────────────────┘
-                      ▼
-              ragas_evaluator.py
-              (score the answer)
-                      │
-                      ▼
-              Show answer + scores
-              in beautiful UI
-
-"""
