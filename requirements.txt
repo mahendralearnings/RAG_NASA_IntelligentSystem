@@ -1,0 +1,22 @@
+# ── Core AI ──────────────────────────────────────────────────────
+anthropic>=0.25.0              # Claude API (chat + evaluation LLM)
+langchain-anthropic>=0.1.0     # Claude wrapper for RAGAS
+
+# ── Free local embeddings (no API key needed) ─────────────────────
+sentence-transformers>=2.2.0   # Free local embedding model
+langchain-community>=0.0.20    # HuggingFaceEmbeddings for RAGAS
+
+# ── Vector Database ───────────────────────────────────────────────
+chromadb>=0.4.0
+
+# ── UI ────────────────────────────────────────────────────────────
+streamlit>=1.28.0
+
+# ── RAG Evaluation ────────────────────────────────────────────────
+ragas>=0.1.0
+datasets>=2.0.0
+langchain>=0.1.0
+
+# ── Utilities ─────────────────────────────────────────────────────
+python-dotenv>=1.0.0
+pandas>=1.5.0
